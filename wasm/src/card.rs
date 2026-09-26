@@ -4,9 +4,10 @@ use wasm_bindgen::prelude::*;
 use quickcheck::{Arbitrary, Gen};
 
 #[wasm_bindgen]
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Hash, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Rank {
+    #[default]
     Two = 0,
     Three = 1,
     Four = 2,
@@ -38,10 +39,18 @@ pub const ALL_RANKS: [Rank; 13] = [
     Rank::Ace,
 ];
 
+#[cfg(test)]
+impl Arbitrary for Rank {
+    fn arbitrary(g: &mut Gen) -> Self {
+        *g.choose(&ALL_RANKS).unwrap()
+    }
+}
+
 #[wasm_bindgen]
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Hash, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Suit {
+    #[default]
     Diamond = 0,
     Club = 1,
     Heart = 2,
@@ -50,9 +59,16 @@ pub enum Suit {
 
 pub const ALL_SUITS: [Suit; 4] = [Suit::Diamond, Suit::Club, Suit::Heart, Suit::Spade];
 
+#[cfg(test)]
+impl Arbitrary for Suit {
+    fn arbitrary(g: &mut Gen) -> Self {
+        *g.choose(&ALL_SUITS).unwrap()
+    }
+}
+
 pub const NUM_CARDS: usize = ALL_SUITS.len() * ALL_RANKS.len();
 #[wasm_bindgen]
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Card {
     rank: Rank,
     suit: Suit,
@@ -81,7 +97,7 @@ impl Card {
             'Q' => Rank::Queen,
             'K' => Rank::King,
             'A' => Rank::Ace,
-            _ => return None
+            _ => return None,
         };
 
         let suit = match it.next()?.to_ascii_lowercase() {
@@ -89,7 +105,7 @@ impl Card {
             'd' => Suit::Diamond,
             'h' => Suit::Heart,
             's' => Suit::Spade,
-            _ => return None
+            _ => return None,
         };
 
         if it.next().is_some() {
@@ -129,8 +145,8 @@ impl Card {
 }
 
 #[cfg(test)]
-pub fn card_vec<I: IntoIterator<Item=&'static str>>(cs: I) -> Vec<Card> {
-    cs.into_iter().map(|c| Card::parse(c).unwrap()).collect()
+pub fn card_array<const N: usize>(cs: [&str; N]) -> [Card; N] {
+    cs.map(|c| Card::parse(c).unwrap())
 }
 
 #[cfg(test)]
@@ -179,5 +195,18 @@ mod tests {
         assert_eq!(Card::parse("Ash"), None);
         assert_eq!(Card::parse("A"), None);
         assert_eq!(Card::parse(""), None);
+    }
+
+    #[test]
+    fn test_card_array() {
+        let cards = card_array(["As", "Kh", "2c"]);
+        assert_eq!(
+            cards,
+            [
+                Card::new(Rank::Ace, Suit::Spade),
+                Card::new(Rank::King, Suit::Heart),
+                Card::new(Rank::Two, Suit::Club),
+            ]
+        );
     }
 }

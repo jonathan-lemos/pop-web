@@ -1,4 +1,4 @@
-use crate::card::Card;
+use crate::card::{Card, NUM_CARDS};
 use std::ops::{Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, Sub, SubAssign};
 
 #[cfg(test)]
@@ -30,6 +30,13 @@ impl CardSet {
 
     pub fn iter(&self) -> CardSetIterator {
         CardSetIterator {
+            bitset: self.bitset,
+            shifted: 0,
+        }
+    }
+
+    pub fn iter_desc(&self) -> CardSetReverseIterator {
+        CardSetReverseIterator {
             bitset: self.bitset,
             shifted: 0,
         }
@@ -155,6 +162,31 @@ impl Iterator for CardSetIterator {
     }
 }
 
+#[derive(Debug)]
+pub struct CardSetReverseIterator {
+    bitset: u64,
+    shifted: usize,
+}
+
+impl Iterator for CardSetReverseIterator {
+    type Item = Card;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.bitset & 0x8000000000000 == 0 {
+            if self.bitset == 0 {
+                return None;
+            }
+            self.bitset <<= 1;
+            self.shifted += 1;
+        }
+
+        let card = Card::from_index(NUM_CARDS - 1 - self.shifted);
+        self.bitset <<= 1;
+        self.shifted += 1;
+        Some(card)
+    }
+}
+
 #[cfg(test)]
 struct CardSetShrinkIterator {
     cards: Vec<Card>,
@@ -191,7 +223,7 @@ impl Arbitrary for CardSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::card::{NUM_CARDS, card_vec};
+    use crate::card::{NUM_CARDS, card_array};
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
     use std::collections::HashSet;
@@ -275,68 +307,76 @@ mod tests {
 
     #[test]
     fn test_bitand_returns_cardset_with_only_shared_cards() {
-        let set1 = card_vec(["As", "Kh"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["Td", "Kh", "8s"])
+        let set1 = card_array(["As", "Kh"]).into_iter().collect::<CardSet>();
+        let set2 = card_array(["Td", "Kh", "8s"])
             .into_iter()
             .collect::<CardSet>();
-        let expected = card_vec(["Kh"]).into_iter().collect::<CardSet>();
+        let expected = card_array(["Kh"]).into_iter().collect::<CardSet>();
         assert_eq!(set1 & set2, expected);
     }
 
     #[quickcheck]
     fn test_bitand_intersects_cards_quickcheck(set1: HashSet<Card>, set2: HashSet<Card>) {
-        let cardset1 = set1.iter().cloned().collect::<CardSet>();
-        let cardset2 = set2.iter().cloned().collect::<CardSet>();
+        let cardset1 = set1.iter().copied().collect::<CardSet>();
+        let cardset2 = set2.iter().copied().collect::<CardSet>();
 
         let actual_intersection = (cardset1 & cardset2).iter().collect::<HashSet<_>>();
-        let expected_intersection = set1.intersection(&set2).cloned().collect::<HashSet<_>>();
+        let expected_intersection = set1.intersection(&set2).copied().collect::<HashSet<_>>();
 
         assert_eq!(actual_intersection, expected_intersection);
     }
 
     #[test]
     fn test_bitandassign_removes_all_but_shared_cards() {
-        let mut set1 = card_vec(["As", "Kh"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["Td", "Kh", "8s"]).into_iter().collect::<CardSet>();
+        let mut set1 = card_array(["As", "Kh"]).into_iter().collect::<CardSet>();
+        let set2 = card_array(["Td", "Kh", "8s"])
+            .into_iter()
+            .collect::<CardSet>();
         set1 &= set2;
-        let expected = card_vec(["Kh"]).into_iter().collect::<CardSet>();
+        let expected = card_array(["Kh"]).into_iter().collect::<CardSet>();
         assert_eq!(set1, expected);
     }
 
     #[test]
     fn test_bitor_returns_cards_from_both() {
-        let set1 = card_vec(["As", "Kh"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["Td", "Kh", "8s"])
+        let set1 = card_array(["As", "Kh"]).into_iter().collect::<CardSet>();
+        let set2 = card_array(["Td", "Kh", "8s"])
             .into_iter()
             .collect::<CardSet>();
-        let expected = card_vec(["As", "Kh", "Td", "8s"]).into_iter().collect::<CardSet>();
+        let expected = card_array(["As", "Kh", "Td", "8s"])
+            .into_iter()
+            .collect::<CardSet>();
         assert_eq!(set1 | set2, expected);
     }
 
     #[quickcheck]
     fn test_bitor_unions_cards_quickcheck(set1: HashSet<Card>, set2: HashSet<Card>) {
-        let cardset1 = set1.iter().cloned().collect::<CardSet>();
-        let cardset2 = set2.iter().cloned().collect::<CardSet>();
+        let cardset1 = set1.iter().copied().collect::<CardSet>();
+        let cardset2 = set2.iter().copied().collect::<CardSet>();
 
         let actual_intersection = (cardset1 | cardset2).iter().collect::<HashSet<_>>();
-        let expected_intersection = set1.union(&set2).cloned().collect::<HashSet<_>>();
+        let expected_intersection = set1.union(&set2).copied().collect::<HashSet<_>>();
 
         assert_eq!(actual_intersection, expected_intersection);
     }
 
     #[test]
     fn test_bitor_unions_cards() {
-        let mut set1 = card_vec(["As", "Kh"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["Td", "Kh", "8s"]).into_iter().collect::<CardSet>();
+        let mut set1 = card_array(["As", "Kh"]).into_iter().collect::<CardSet>();
+        let set2 = card_array(["Td", "Kh", "8s"])
+            .into_iter()
+            .collect::<CardSet>();
         set1 |= set2;
-        let expected = card_vec(["As", "Kh", "Td", "8s"]).into_iter().collect::<CardSet>();
+        let expected = card_array(["As", "Kh", "Td", "8s"])
+            .into_iter()
+            .collect::<CardSet>();
         assert_eq!(set1, expected);
     }
 
     #[test]
     fn test_disjoint_with_returns_true_for_no_shared_cards() {
-        let set1 = card_vec(["As", "Kh"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["Td", "9d", "8s"])
+        let set1 = card_array(["As", "Kh"]).into_iter().collect::<CardSet>();
+        let set2 = card_array(["Td", "9d", "8s"])
             .into_iter()
             .collect::<CardSet>();
         assert!(set1.disjoint_with(set2));
@@ -344,8 +384,8 @@ mod tests {
 
     #[test]
     fn test_disjoint_with_returns_false_for_any_shared_card() {
-        let set1 = card_vec(["As", "Kh"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["Td", "Kh", "8s"])
+        let set1 = card_array(["As", "Kh"]).into_iter().collect::<CardSet>();
+        let set2 = card_array(["Td", "Kh", "8s"])
             .into_iter()
             .collect::<CardSet>();
         assert!(!set1.disjoint_with(set2));
@@ -353,8 +393,8 @@ mod tests {
 
     #[quickcheck]
     fn test_disjoint_with_quickcheck(set1: HashSet<Card>, set2: HashSet<Card>) {
-        let cardset1 = set1.iter().cloned().collect::<CardSet>();
-        let cardset2 = set2.iter().cloned().collect::<CardSet>();
+        let cardset1 = set1.iter().copied().collect::<CardSet>();
+        let cardset2 = set2.iter().copied().collect::<CardSet>();
 
         assert_eq!(
             cardset1.disjoint_with(cardset2),
@@ -364,8 +404,8 @@ mod tests {
 
     #[test]
     fn test_from_iterator_adds_all_cards() {
-        let cards = card_vec(["As", "Kh", "Tc", "9c", "8d"]);
-        let cardset = cards.iter().cloned().collect::<CardSet>();
+        let cards = card_array(["As", "Kh", "Tc", "9c", "8d"]);
+        let cardset = cards.iter().copied().collect::<CardSet>();
 
         for card in cards {
             assert!(cardset.contains(card));
@@ -375,8 +415,15 @@ mod tests {
 
     #[quickcheck]
     fn test_from_to_iterator_is_bijective(cards: HashSet<Card>) {
-        let cardset = cards.iter().cloned().collect::<CardSet>();
+        let cardset = cards.iter().copied().collect::<CardSet>();
         let card_hashset: HashSet<_> = cardset.iter().collect();
+        assert_eq!(card_hashset, cards);
+    }
+
+    #[quickcheck]
+    fn test_from_to_iterator_desc_is_bijective(cards: HashSet<Card>) {
+        let cardset = cards.iter().copied().collect::<CardSet>();
+        let card_hashset: HashSet<_> = cardset.iter_desc().collect();
         assert_eq!(card_hashset, cards);
     }
 
@@ -404,29 +451,67 @@ mod tests {
     }
 
     #[test]
+    fn test_iter_desc_all_cards_have_52() {
+        let set = CardSet::all();
+        assert_eq!(set.iter_desc().count(), NUM_CARDS);
+    }
+
+    #[test]
+    fn test_iter_desc_all_cards_has_no_duplicates() {
+        let set = CardSet::all();
+        let cards: HashSet<_> = set.iter_desc().collect();
+        assert_eq!(cards.len(), set.len());
+    }
+
+    #[test]
+    fn test_iter_desc_cards_sorted_descending() {
+        let set = CardSet::all();
+        let cards: Vec<_> = set.iter_desc().collect();
+        let mut cards_sorted_desc = cards.clone();
+        cards_sorted_desc.sort();
+        cards_sorted_desc.reverse();
+
+        assert_eq!(cards, cards_sorted_desc);
+    }
+
+    #[test]
     fn test_sub_cardset_removes_cards_in_other_set() {
-        let mut set1 = card_vec(["As", "Kh", "Qd"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["As", "Qd", "Th"]).into_iter().collect::<CardSet>();
-        let expected = card_vec(["Kh"]).into_iter().collect::<CardSet>();
+        let set1 = card_array(["As", "Kh", "Qd"])
+            .into_iter()
+            .collect::<CardSet>();
+        let set2 = card_array(["As", "Qd", "Th"])
+            .into_iter()
+            .collect::<CardSet>();
+        let expected = card_array(["Kh"]).into_iter().collect::<CardSet>();
         assert_eq!(set1 - set2, expected);
     }
 
     #[test]
     fn test_subassign_cardset_removes_cards_in_other_set() {
-        let mut set1 = card_vec(["As", "Kh", "Qd"]).into_iter().collect::<CardSet>();
-        let set2 = card_vec(["As", "Qd", "Th"]).into_iter().collect::<CardSet>();
+        let mut set1 = card_array(["As", "Kh", "Qd"])
+            .into_iter()
+            .collect::<CardSet>();
+        let set2 = card_array(["As", "Qd", "Th"])
+            .into_iter()
+            .collect::<CardSet>();
         set1 -= set2;
-        let expected = card_vec(["Kh"]).into_iter().collect::<CardSet>();
+        let expected = card_array(["Kh"]).into_iter().collect::<CardSet>();
         assert_eq!(set1, expected);
     }
 
     #[quickcheck]
-    fn test_subassign_cardset_removes_all_from_other_set_quickcheck(set1: HashSet<Card>, set2: HashSet<Card>) {
-        let mut cardset1 = set1.iter().cloned().collect::<CardSet>();
-        let cardset2 = set2.iter().cloned().collect::<CardSet>();
+    fn test_subassign_cardset_removes_all_from_other_set_quickcheck(
+        set1: HashSet<Card>,
+        set2: HashSet<Card>,
+    ) {
+        let mut cardset1 = set1.iter().copied().collect::<CardSet>();
+        let cardset2 = set2.iter().copied().collect::<CardSet>();
 
         cardset1 -= cardset2;
-        assert_eq!(cardset1, set1.difference(&set2).cloned().collect::<CardSet>());
+        assert_eq!(
+            cardset1,
+            set1.difference(&set2).copied().collect::<CardSet>()
+        );
     }
 
     #[test]
