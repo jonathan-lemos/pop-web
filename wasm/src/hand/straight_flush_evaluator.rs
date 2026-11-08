@@ -1,5 +1,5 @@
-use crate::card::{ALL_SUITS, Card, Rank, Suit};
-use crate::evaluation::straight_evaluator::StraightEvaluator;
+use crate::card::{ALL_SUITS, Card, Rank};
+use crate::hand::straight_evaluator::StraightEvaluator;
 
 #[derive(Debug)]
 pub struct StraightFlushEvaluator<const MAX_CAPACITY: usize> {
@@ -42,7 +42,7 @@ impl<const MAX_CAPACITY: usize> FromIterator<Card> for StraightFlushEvaluator<MA
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::card::card_array;
+    use crate::card::{Suit, card_array};
 
     #[test]
     fn test_returns_none_when_empty() {

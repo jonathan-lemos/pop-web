@@ -1,10 +1,10 @@
 use crate::card::{Card, Rank};
-use crate::evaluation::flush_evaluator::FlushEvaluator;
-use crate::evaluation::hand_result::HandResult;
-use crate::evaluation::rank_counter::RankCounter;
-use crate::evaluation::straight_evaluator::StraightEvaluator;
-use crate::evaluation::straight_flush_evaluator::StraightFlushEvaluator;
-use crate::evaluation::util::{is_sorted_desc, is_strictly_sorted_desc};
+use crate::hand::flush_evaluator::FlushEvaluator;
+use crate::hand::hand_result::HandResult;
+use crate::hand::rank_counter::RankCounter;
+use crate::hand::straight_evaluator::StraightEvaluator;
+use crate::hand::straight_flush_evaluator::StraightFlushEvaluator;
+use crate::hand::util::is_sorted_desc;
 
 const MIN_EVALUATION_SIZE: usize = 5;
 const MAX_EVALUATION_SIZE: usize = 7;
@@ -12,11 +12,15 @@ const MAX_EVALUATION_SIZE: usize = 7;
 // The cards must be given in descending order of rank.
 pub fn evaluate_hand<const EVALUATION_SIZE: usize>(cards: &[Card; EVALUATION_SIZE]) -> HandResult {
     const {
-        assert!(EVALUATION_SIZE >= MIN_EVALUATION_SIZE);
-        assert!(EVALUATION_SIZE <= MAX_EVALUATION_SIZE);
+        assert!(
+            EVALUATION_SIZE >= MIN_EVALUATION_SIZE && EVALUATION_SIZE <= MAX_EVALUATION_SIZE,
+            "Can only evaluate between 5 and 7 cards"
+        );
     }
 
-    debug_assert!(is_strictly_sorted_desc(cards.iter()));
+    debug_assert!(cards
+        .windows(2)
+        .all(|pair| pair[0].rank() >= pair[1].rank()));
 
     let straight_flush_evaluator: StraightFlushEvaluator<EVALUATION_SIZE> =
         cards.iter().copied().collect();
@@ -59,8 +63,10 @@ pub fn evaluate_hand_suitless<const EVALUATION_SIZE: usize>(
     ranks: &[Rank; EVALUATION_SIZE],
 ) -> HandResult {
     const {
-        assert!(EVALUATION_SIZE >= MIN_EVALUATION_SIZE);
-        assert!(EVALUATION_SIZE <= MAX_EVALUATION_SIZE);
+        assert!(
+            EVALUATION_SIZE >= MIN_EVALUATION_SIZE && EVALUATION_SIZE <= MAX_EVALUATION_SIZE,
+            "Can only evaluate between 5 and 7 cards"
+        );
     }
 
     debug_assert!(is_sorted_desc(ranks.iter()));
@@ -91,7 +97,7 @@ pub fn evaluate_hand_suitless<const EVALUATION_SIZE: usize>(
 #[cfg(test)]
 mod evaluate_hand_tests {
     use super::*;
-    use crate::card::{Rank, card_array};
+    use crate::card::{card_array, Rank};
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
     use std::collections::HashSet;
@@ -548,7 +554,7 @@ mod evaluate_hand_tests {
 mod evaluate_hand_suitless_tests {
     use super::*;
     use crate::card::Rank;
-    use crate::evaluation::util::frequency;
+    use crate::hand::util::frequency;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
 

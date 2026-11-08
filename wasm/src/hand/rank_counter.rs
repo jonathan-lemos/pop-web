@@ -1,8 +1,12 @@
 use crate::card::{ALL_RANKS, Rank};
-use crate::evaluation::hand_result::HandResult;
+use crate::hand::hand_result::HandResult;
 use std::cmp::max;
+use std::ops::{Index, IndexMut};
 
-#[derive(Debug)]
+#[cfg(test)]
+use quickcheck::{Arbitrary, Gen};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RankCounter {
     counts: [u8; ALL_RANKS.len()],
 }
@@ -14,31 +18,32 @@ impl RankCounter {
         }
     }
 
-    // Do not add more than 4 of the same rank.
-    pub fn add(&mut self, rank: Rank) {
-        debug_assert!(
-            self.counts[rank as usize] < 4,
-            "Cannot add more than 4 cards of the same rank"
-        );
-        self.counts[rank as usize] += 1;
+    pub fn full() -> Self {
+        Self {
+            counts: [4; ALL_RANKS.len()],
+        }
     }
 
     // Evaluates the best count-based hand based on the given ranks.
     //
     // Will not output Straight, Flush, or StraightFlush.
-    // You must put at least 5 cards into the RankCounter before calling this function.
-    pub fn evaluate(&self) -> HandResult {
-        let mut high_count_rank = (self.counts[Rank::Ace as usize], Rank::Ace);
+    // You must have at least 5 ranks in the RankCounter before calling this function.
+    pub(super) fn evaluate(&self) -> HandResult {
+        let mut high_count_rank = (self[Rank::Ace], Rank::Ace);
         for rank in ALL_RANKS[0..ALL_RANKS.len() - 1].iter().rev() {
-            high_count_rank = max(high_count_rank, (self.counts[*rank as usize], *rank));
+            high_count_rank = max(high_count_rank, (self[*rank], *rank));
         }
+        debug_assert!(
+            high_count_rank.0 <= 4,
+            "Cannot have more than 4 of a single rank"
+        );
 
         if high_count_rank.0 == 4 {
             for rank in ALL_RANKS.iter().rev() {
                 if *rank == high_count_rank.1 {
                     continue;
                 }
-                if self.counts[*rank as usize] > 0 {
+                if self[*rank] > 0 {
                     return HandResult::FourOfAKind {
                         rank: high_count_rank.1,
                         kicker: *rank,
@@ -53,7 +58,7 @@ impl RankCounter {
                 if *rank == high_count_rank.1 {
                     continue;
                 }
-                if self.counts[*rank as usize] >= 2 {
+                if self[*rank] >= 2 {
                     return HandResult::FullHouse {
                         trips_rank: high_count_rank.1,
                         pair_rank: *rank,
@@ -66,7 +71,7 @@ impl RankCounter {
                 if *rank == high_count_rank.1 {
                     continue;
                 }
-                if self.counts[*rank as usize] > 0 {
+                if self[*rank] > 0 {
                     match high_kicker {
                         Some(kicker) => {
                             return HandResult::ThreeOfAKind {
@@ -87,7 +92,7 @@ impl RankCounter {
                 if *rank == high_count_rank.1 {
                     continue;
                 }
-                if self.counts[*rank as usize] >= 2 {
+                if self[*rank] >= 2 {
                     kicker_pair = Some(*rank);
                     break;
                 }
@@ -98,7 +103,7 @@ impl RankCounter {
                     if *rank == high_count_rank.1 || *rank == low_rank {
                         continue;
                     }
-                    if self.counts[*rank as usize] > 0 {
+                    if self[*rank] > 0 {
                         return HandResult::TwoPair {
                             high_rank: high_count_rank.1,
                             low_rank,
@@ -113,7 +118,7 @@ impl RankCounter {
                     if *rank == high_count_rank.1 {
                         continue;
                     }
-                    if self.counts[*rank as usize] > 0 {
+                    if self[*rank] > 0 {
                         match (high_kicker, mid_kicker) {
                             (Some(high), Some(mid)) => {
                                 return HandResult::Pair {
@@ -133,7 +138,7 @@ impl RankCounter {
         let mut kickers: [Rank; 5] = [high_count_rank.1; 5];
         let mut kicker_count = 0;
         for rank in ALL_RANKS[0..high_count_rank.1 as usize].iter().rev() {
-            if self.counts[*rank as usize] > 0 {
+            if self[*rank] > 0 {
                 kickers[kicker_count + 1] = *rank;
                 kicker_count += 1;
             }
@@ -152,7 +157,36 @@ impl FromIterator<Rank> for RankCounter {
     fn from_iter<T: IntoIterator<Item = Rank>>(iter: T) -> Self {
         let mut ret = Self::new();
         for rank in iter {
-            ret.add(rank);
+            ret[rank] += 1;
+        }
+        ret
+    }
+}
+
+impl Index<Rank> for RankCounter {
+    type Output = u8;
+
+    fn index(&self, rank: Rank) -> &Self::Output {
+        debug_assert!(
+            self.counts[rank as usize] <= 4,
+            "Cannot have more than 4 of a single rank"
+        );
+        &self.counts[rank as usize]
+    }
+}
+
+impl IndexMut<Rank> for RankCounter {
+    fn index_mut(&mut self, rank: Rank) -> &mut Self::Output {
+        &mut self.counts[rank as usize]
+    }
+}
+
+#[cfg(test)]
+impl Arbitrary for RankCounter {
+    fn arbitrary(g: &mut Gen) -> Self {
+        let mut ret = Self::new();
+        for rank in ALL_RANKS {
+            ret[rank] = u8::arbitrary(g) % 4;
         }
         ret
     }
@@ -161,19 +195,18 @@ impl FromIterator<Rank> for RankCounter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evaluation::util::frequency;
+    use crate::hand::util::frequency;
     use quickcheck::TestResult;
     use quickcheck_macros::quickcheck;
-    use std::collections::HashMap;
 
     #[test]
     fn test_high_card() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Seven);
-        counter.add(Rank::Five);
-        counter.add(Rank::Four);
-        counter.add(Rank::Three);
-        counter.add(Rank::Two);
+        counter[Rank::Seven] = 1;
+        counter[Rank::Five] = 1;
+        counter[Rank::Four] = 1;
+        counter[Rank::Three] = 1;
+        counter[Rank::Two] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::HighCard {
@@ -185,13 +218,13 @@ mod tests {
     #[test]
     fn test_high_card_chooses_highest_cards() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Four);
-        counter.add(Rank::Jack);
-        counter.add(Rank::Six);
-        counter.add(Rank::Ace);
-        counter.add(Rank::King);
-        counter.add(Rank::Eight);
-        counter.add(Rank::Nine);
+        counter[Rank::Four] = 1;
+        counter[Rank::Jack] = 1;
+        counter[Rank::Six] = 1;
+        counter[Rank::Ace] = 1;
+        counter[Rank::King] = 1;
+        counter[Rank::Eight] = 1;
+        counter[Rank::Nine] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::HighCard {
@@ -203,11 +236,10 @@ mod tests {
     #[test]
     fn test_pair() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Ten);
+        counter[Rank::King] = 2;
+        counter[Rank::Ace] = 1;
+        counter[Rank::Queen] = 1;
+        counter[Rank::Ten] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::Pair {
@@ -220,13 +252,12 @@ mod tests {
     #[test]
     fn test_pair_chooses_highest_kickers() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Ace);
-        counter.add(Rank::Two);
-        counter.add(Rank::Seven);
-        counter.add(Rank::Two);
-        counter.add(Rank::Nine);
-        counter.add(Rank::Six);
-        counter.add(Rank::Jack);
+        counter[Rank::Ace] = 1;
+        counter[Rank::Two] = 2;
+        counter[Rank::Seven] = 1;
+        counter[Rank::Nine] = 1;
+        counter[Rank::Six] = 1;
+        counter[Rank::Jack] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::Pair {
@@ -239,11 +270,9 @@ mod tests {
     #[test]
     fn test_two_pair() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Ace);
+        counter[Rank::King] = 2;
+        counter[Rank::Queen] = 2;
+        counter[Rank::Ace] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::TwoPair {
@@ -257,13 +286,11 @@ mod tests {
     #[test]
     fn test_two_pair_chooses_highest_kicker() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Two);
-        counter.add(Rank::Jack);
-        counter.add(Rank::Five);
+        counter[Rank::Queen] = 2;
+        counter[Rank::King] = 2;
+        counter[Rank::Two] = 1;
+        counter[Rank::Jack] = 1;
+        counter[Rank::Five] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::TwoPair {
@@ -277,13 +304,10 @@ mod tests {
     #[test]
     fn test_two_pair_chooses_kicker_from_third_pair_if_its_the_highest() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Jack);
-        counter.add(Rank::Jack);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Nine);
+        counter[Rank::Jack] = 2;
+        counter[Rank::King] = 2;
+        counter[Rank::Queen] = 2;
+        counter[Rank::Nine] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::TwoPair {
@@ -297,13 +321,10 @@ mod tests {
     #[test]
     fn test_two_pair_chooses_highest_kicker_if_not_in_third_pair() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Jack);
-        counter.add(Rank::Jack);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Ace);
+        counter[Rank::Jack] = 2;
+        counter[Rank::King] = 2;
+        counter[Rank::Queen] = 2;
+        counter[Rank::Ace] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::TwoPair {
@@ -317,11 +338,9 @@ mod tests {
     #[test]
     fn test_three_of_a_kind() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
+        counter[Rank::Ace] = 3;
+        counter[Rank::King] = 1;
+        counter[Rank::Queen] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::ThreeOfAKind {
@@ -334,13 +353,11 @@ mod tests {
     #[test]
     fn test_three_of_a_kind_chooses_highest_kickers() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Seven);
-        counter.add(Rank::Seven);
-        counter.add(Rank::Seven);
-        counter.add(Rank::Jack);
-        counter.add(Rank::Two);
-        counter.add(Rank::Eight);
-        counter.add(Rank::Six);
+        counter[Rank::Seven] = 3;
+        counter[Rank::Jack] = 1;
+        counter[Rank::Two] = 1;
+        counter[Rank::Eight] = 1;
+        counter[Rank::Six] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::ThreeOfAKind {
@@ -353,11 +370,8 @@ mod tests {
     #[test]
     fn test_full_house() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Nine);
-        counter.add(Rank::Nine);
-        counter.add(Rank::Nine);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
+        counter[Rank::Nine] = 3;
+        counter[Rank::King] = 2;
         assert_eq!(
             counter.evaluate(),
             HandResult::FullHouse {
@@ -370,15 +384,12 @@ mod tests {
     #[test]
     fn test_full_house_ignores_irrelevant_kickers() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Nine);
-        counter.add(Rank::Nine);
-        counter.add(Rank::Nine);
-        counter.add(Rank::Ten);
-        counter.add(Rank::Ten);
-        counter.add(Rank::Jack);
-        counter.add(Rank::King);
-        counter.add(Rank::Six);
-        counter.add(Rank::Eight);
+        counter[Rank::Nine] = 3;
+        counter[Rank::Ten] = 2;
+        counter[Rank::Jack] = 1;
+        counter[Rank::King] = 1;
+        counter[Rank::Six] = 1;
+        counter[Rank::Eight] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::FullHouse {
@@ -391,13 +402,9 @@ mod tests {
     #[test]
     fn test_full_house_chooses_highest_pair() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
+        counter[Rank::Ace] = 3;
+        counter[Rank::King] = 2;
+        counter[Rank::Queen] = 2;
         assert_eq!(
             counter.evaluate(),
             HandResult::FullHouse {
@@ -410,14 +417,9 @@ mod tests {
     #[test]
     fn test_full_house_takes_from_other_trips_if_necessary() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
+        counter[Rank::Ace] = 3;
+        counter[Rank::King] = 3;
+        counter[Rank::Queen] = 2;
         assert_eq!(
             counter.evaluate(),
             HandResult::FullHouse {
@@ -430,14 +432,9 @@ mod tests {
     #[test]
     fn test_full_house_ignores_other_trips_when_lower_than_best_pair() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Queen);
+        counter[Rank::Ace] = 3;
+        counter[Rank::King] = 2;
+        counter[Rank::Queen] = 3;
         assert_eq!(
             counter.evaluate(),
             HandResult::FullHouse {
@@ -450,11 +447,8 @@ mod tests {
     #[test]
     fn test_four_of_a_kind() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::Ace);
-        counter.add(Rank::King);
+        counter[Rank::Ace] = 4;
+        counter[Rank::King] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::FourOfAKind {
@@ -467,13 +461,10 @@ mod tests {
     #[test]
     fn test_four_of_a_kind_chooses_best_kicker() {
         let mut counter = RankCounter::new();
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::King);
-        counter.add(Rank::Queen);
-        counter.add(Rank::Ten);
-        counter.add(Rank::Jack);
+        counter[Rank::King] = 4;
+        counter[Rank::Queen] = 1;
+        counter[Rank::Ten] = 1;
+        counter[Rank::Jack] = 1;
         assert_eq!(
             counter.evaluate(),
             HandResult::FourOfAKind {
@@ -503,6 +494,69 @@ mod tests {
                 kicker: Rank::Jack,
             }
         );
+    }
+
+    #[test]
+    fn test_add_subtract() {
+        let ranks = &[
+            Rank::Queen,
+            Rank::Queen,
+            Rank::King,
+            Rank::King,
+            Rank::Two,
+            Rank::Jack,
+            Rank::Five,
+        ];
+        let mut counter = ranks.iter().cloned().collect::<RankCounter>();
+        counter[Rank::Queen] += 1;
+        assert_eq!(counter[Rank::Queen], 3);
+        counter[Rank::King] -= 2;
+        assert_eq!(counter[Rank::King], 0);
+    }
+
+    #[test]
+    fn test_get() {
+        let ranks = &[
+            Rank::Queen,
+            Rank::Queen,
+            Rank::King,
+            Rank::King,
+            Rank::Two,
+            Rank::Jack,
+            Rank::Five,
+        ];
+        let counter = ranks.iter().cloned().collect::<RankCounter>();
+        assert_eq!(counter[Rank::Two], 1);
+        assert_eq!(counter[Rank::Three], 0);
+        assert_eq!(counter[Rank::Queen], 2);
+        assert_eq!(counter[Rank::King], 2);
+    }
+
+    #[test]
+    fn test_remove() {
+        let ranks = &[
+            Rank::Queen,
+            Rank::Queen,
+            Rank::King,
+            Rank::King,
+            Rank::Two,
+            Rank::Jack,
+            Rank::Five,
+        ];
+        let mut counter = ranks.iter().cloned().collect::<RankCounter>();
+
+        counter[Rank::Queen] -= 1;
+        assert_eq!(counter[Rank::Queen], 1);
+        counter[Rank::Two] -= 1;
+        assert_eq!(counter[Rank::Two], 0);
+    }
+
+    #[test]
+    fn test_full() {
+        let counter = RankCounter::full();
+        for rank in ALL_RANKS {
+            assert_eq!(counter[rank], 4);
+        }
     }
 
     #[quickcheck]

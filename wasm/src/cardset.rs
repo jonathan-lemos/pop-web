@@ -12,7 +12,7 @@ pub struct CardSet {
 impl CardSet {
     pub fn all() -> Self {
         Self {
-            bitset: 0xFFFFFFFFFFFFF,
+            bitset: (1 << 52) - 1,
         }
     }
 

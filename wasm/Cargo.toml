@@ -11,3 +11,6 @@ console_error_panic_hook = "0.1.7"
 quickcheck = "1.1.0"
 quickcheck_macros = "1.2.0"
 wasm-bindgen = "0.2.128"
+
+[dev-dependencies]
+assert_unordered = "0.4.0"

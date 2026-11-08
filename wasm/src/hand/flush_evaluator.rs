@@ -1,4 +1,4 @@
-use crate::card::{ALL_SUITS, Card, Rank, Suit};
+use crate::card::{ALL_SUITS, Card, Rank};
 
 const FLUSH_LEN: usize = 5;
 
@@ -76,7 +76,7 @@ impl FromIterator<Card> for FlushEvaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::card::card_array;
+    use crate::card::{Suit, card_array};
 
     #[test]
     fn test_returns_none_when_empty() {
